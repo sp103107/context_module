@@ -118,6 +118,80 @@ restored_ws = restored_wsm.load()
 print(f"Restored objective: {restored_ws['objective']}")
 ```
 
+### Hybrid LLM Support
+
+The AoS Context Module includes a unified LLM adapter that supports both local and cloud LLM providers.
+
+#### Environment Configuration
+
+Set environment variables to configure your LLM provider:
+
+```bash
+# For OpenAI (cloud)
+export LLM_PROVIDER=openai
+export LLM_MODEL_NAME=gpt-4o
+export OPENAI_API_KEY=sk-...
+
+# For Anthropic (cloud)
+export LLM_PROVIDER=anthropic
+export LLM_MODEL_NAME=claude-3-5-sonnet-20241022
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# For Ollama (local)
+export LLM_PROVIDER=ollama
+export LLM_BASE_URL=http://localhost:11434/v1
+export LLM_MODEL_NAME=llama3
+
+# For LM Studio or other local servers
+export LLM_PROVIDER=local
+export LLM_BASE_URL=http://localhost:1234/v1
+export LLM_MODEL_NAME=llama-3-8b-instruct
+```
+
+#### Basic Usage
+
+```python
+from aos_context.llm_adapter import create_llm_client
+
+# Create client (loads from environment variables)
+client = create_llm_client()
+
+# Complete a conversation
+messages = [
+    {"role": "user", "content": "What is 2+2?"}
+]
+response = client.complete(messages)
+print(response)
+```
+
+#### Explicit Configuration
+
+```python
+from aos_context.config import LLMConfig
+from aos_context.llm_adapter import LLMClient
+
+# Configure explicitly
+config = LLMConfig(
+    provider="ollama",
+    base_url="http://localhost:11434/v1",
+    model_name="llama3",
+    temperature=0.7,
+    max_tokens=2000
+)
+
+client = LLMClient(config)
+response = client.complete([{"role": "user", "content": "Hi"}])
+```
+
+#### Supported Providers
+
+- **OpenAI**: Cloud-based GPT models (`gpt-4o`, `gpt-3.5-turbo`, etc.)
+- **Anthropic**: Cloud-based Claude models (`claude-3-5-sonnet`, etc.)
+- **Ollama**: Local LLM server (default: `http://localhost:11434/v1`)
+- **Local**: Any OpenAI-compatible server (LM Studio, vLLM, etc.)
+
+See `examples/llm_adapter_example.py` for complete examples.
+
 ### API Server Usage
 
 #### Start the Server
@@ -303,6 +377,23 @@ curl http://127.0.0.1:8000/health
 
 ### Environment Variables
 
+#### LLM Provider Configuration
+
+Configure your LLM provider using environment variables:
+
+```bash
+# Required for LLM
+export LLM_PROVIDER=openai          # or "anthropic", "ollama", "local"
+export LLM_MODEL_NAME=gpt-4o        # Model name
+export LLM_BASE_URL=http://...      # For local servers (optional)
+export OPENAI_API_KEY=sk-...        # OpenAI API key
+export ANTHROPIC_API_KEY=sk-ant-... # Anthropic API key
+
+# Optional LLM parameters
+export LLM_TEMPERATURE=0.7          # Default: 0.7
+export LLM_MAX_TOKENS=2000          # Default: 2000
+```
+
 #### Qdrant Memory Backend
 
 To use Qdrant for vector-based memory storage:
@@ -325,6 +416,19 @@ The server will automatically:
 ```bash
 export AOS_RUNS_ROOT=/path/to/runs
 ```
+
+### Key Environment Variables Summary
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `LLM_PROVIDER` | LLM provider type | `openai`, `anthropic`, `ollama`, `local` |
+| `LLM_BASE_URL` | Base URL for local LLM servers | `http://localhost:11434/v1` |
+| `LLM_MODEL_NAME` | Model identifier | `gpt-4o`, `llama3`, `claude-3-5-sonnet` |
+| `OPENAI_API_KEY` | OpenAI API key | `sk-...` |
+| `ANTHROPIC_API_KEY` | Anthropic API key | `sk-ant-...` |
+| `QDRANT_URL` | Qdrant server URL | `http://localhost:6333` |
+| `QDRANT_COLLECTION` | Qdrant collection name | `agent_memories` |
+| `AOS_RUNS_ROOT` | Workspace directory | `/path/to/runs` |
 
 ## Architecture
 
