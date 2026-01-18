@@ -1,0 +1,8 @@
+# AoS Context v2.1 - Production Dependencies
+# Install with: pip install -r requirements.txt
+
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.6.0
+jsonschema>=4.21.0
+

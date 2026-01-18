@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AoS Context v2.1 - Control Panel</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; margin-bottom: 20px; }
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #555;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 8px;
+        }
+        input, textarea, select, button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .full-width { grid-column: 1 / -1; }
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .error { color: #dc3545; }
+        .success { color: #28a745; }
+        .info { color: #17a2b8; }
+        label {
+            display: block;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #555;
+        }
+        .inline-group {
+            display: flex;
+            gap: 10px;
+        }
+        .inline-group input { flex: 1; }
+        .inline-group button { flex: 0 0 auto; width: auto; min-width: 120px; }
+    </style>
+</head>
+<body>
+    <h1>AoS Context v2.1 - Control Panel</h1>
+
+    <div class="section">
+        <h2>1. Boot Run</h2>
+        <label>Objective:</label>
+        <textarea id="objective" placeholder="Enter task objective...">Generate schemas and implement WS/RL/EP for my agent factory.</textarea>
+        <label>Acceptance Criteria (one per line):</label>
+        <textarea id="acceptance_criteria" placeholder="Schemas validate&#10;WS patch applies&#10;Ledger appends"></textarea>
+        <label>Constraints (one per line):</label>
+        <textarea id="constraints" placeholder="No unknown WS fields&#10;Commit memory only at milestones"></textarea>
+        <button onclick="bootRun()">Boot Run</button>
+        <div id="bootOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>2. Working Set</h2>
+        <div class="inline-group">
+            <input type="text" id="runId" placeholder="Run ID (from boot)">
+            <button onclick="loadWS()">Load WS</button>
+        </div>
+        <div id="wsOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>3. Update Working Set</h2>
+        <label>Run ID:</label>
+        <input type="text" id="patchRunId" placeholder="Run ID">
+        <label>Expected Sequence (from WS _update_seq):</label>
+        <input type="number" id="expectedSeq" placeholder="0" value="0">
+        <label>WS Patch (JSON):</label>
+        <textarea id="wsPatch" placeholder='{"set": {"status": "BUSY", "next_action": "..."}}'></textarea>
+        <button onclick="patchWS()">Apply Patch</button>
+        <div id="patchOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>4. Memory Operations</h2>
+        <label>Run ID:</label>
+        <input type="text" id="memoryRunId" placeholder="Run ID">
+        <label>Propose Memory (MCR JSON array):</label>
+        <textarea id="memoryPropose" placeholder='[{"_schema_version": "2.1", "op": "add", "type": "fact", "scope": "global", "content": "...", "confidence": 0.8, "rationale": "...", "source_refs": []}]'></textarea>
+        <div class="inline-group">
+            <button onclick="proposeMemory()">Propose</button>
+            <button onclick="searchMemory()">Search</button>
+        </div>
+        <div id="memoryOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>5. Milestone</h2>
+        <label>Run ID:</label>
+        <input type="text" id="milestoneRunId" placeholder="Run ID">
+        <label>Memory Batch ID (from propose):</label>
+        <input type="text" id="memoryBatchId" placeholder="batch_...">
+        <label>Reason:</label>
+        <input type="text" id="milestoneReason" placeholder="checkpoint" value="checkpoint">
+        <label>Next Entry Point:</label>
+        <textarea id="nextEntryPoint" placeholder="Continue from PLAN stage."></textarea>
+        <button onclick="createMilestone()">Create Milestone</button>
+        <div id="milestoneOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <div class="section">
+        <h2>6. Resume Pack</h2>
+        <label>Run ID:</label>
+        <input type="text" id="resumeRunId" placeholder="Run ID">
+        <div class="inline-group">
+            <button onclick="snapshotResume()">Snapshot</button>
+            <button onclick="loadResume()">Load Pack</button>
+        </div>
+        <label>Pack Path (for load):</label>
+        <input type="text" id="packPath" placeholder="/path/to/pack.zip or /path/to/pack_dir">
+        <div id="resumeOutput" class="output" style="display:none;"></div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        function showOutput(id, data, isError = false) {
+            const el = document.getElementById(id);
+            el.style.display = 'block';
+            el.textContent = JSON.stringify(data, null, 2);
+            el.className = 'output ' + (isError ? 'error' : 'success');
+        }
+
+        async function apiCall(method, path, body = null) {
+            try {
+                const opts = { method };
+                if (body) {
+                    opts.headers = { 'Content-Type': 'application/json' };
+                    opts.body = JSON.stringify(body);
+                }
+                const res = await fetch(API_BASE + path, opts);
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+                return { ok: true, data };
+            } catch (err) {
+                return { ok: false, error: err.message };
+            }
+        }
+
+        async function bootRun() {
+            const obj = document.getElementById('objective').value.trim();
+            const ac = document.getElementById('acceptance_criteria').value.split('\n').filter(s => s.trim());
+            const cons = document.getElementById('constraints').value.split('\n').filter(s => s.trim());
+            
+            const result = await apiCall('POST', '/runs/boot', {
+                objective: obj,
+                acceptance_criteria: ac,
+                constraints: cons,
+            });
+            
+            if (result.ok) {
+                document.getElementById('runId').value = result.data.run_id;
+                document.getElementById('patchRunId').value = result.data.run_id;
+                document.getElementById('memoryRunId').value = result.data.run_id;
+                document.getElementById('milestoneRunId').value = result.data.run_id;
+                document.getElementById('resumeRunId').value = result.data.run_id;
+                showOutput('bootOutput', result.data);
+            } else {
+                showOutput('bootOutput', { error: result.error }, true);
+            }
+        }
+
+        async function loadWS() {
+            const runId = document.getElementById('runId').value.trim();
+            if (!runId) {
+                showOutput('wsOutput', { error: 'Run ID required' }, true);
+                return;
+            }
+            
+            const result = await apiCall('GET', `/runs/${runId}/ws`);
+            if (result.ok) {
+                document.getElementById('expectedSeq').value = result.data._update_seq || 0;
+                showOutput('wsOutput', result.data);
+            } else {
+                showOutput('wsOutput', { error: result.error }, true);
+            }
+        }
+
+        async function patchWS() {
+            const runId = document.getElementById('patchRunId').value.trim();
+            const expectedSeq = parseInt(document.getElementById('expectedSeq').value) || 0;
+            let patchData;
+            try {
+                patchData = JSON.parse(document.getElementById('wsPatch').value);
+            } catch (e) {
+                showOutput('patchOutput', { error: 'Invalid JSON: ' + e.message }, true);
+                return;
+            }
+            
+            const patch = {
+                _schema_version: "2.1",
+                expected_seq: expectedSeq,
+                set: patchData.set || patchData,
+            };
+            
+            const result = await apiCall('POST', `/runs/${runId}/step/update`, { patch });
+            if (result.ok) {
+                document.getElementById('expectedSeq').value = result.data.ws._update_seq || 0;
+                showOutput('patchOutput', result.data);
+            } else {
+                showOutput('patchOutput', { error: result.error }, true);
+            }
+        }
+
+        async function proposeMemory() {
+            const runId = document.getElementById('memoryRunId').value.trim();
+            let mcrs;
+            try {
+                mcrs = JSON.parse(document.getElementById('memoryPropose').value);
+            } catch (e) {
+                showOutput('memoryOutput', { error: 'Invalid JSON: ' + e.message }, true);
+                return;
+            }
+            
+            const result = await apiCall('POST', `/runs/${runId}/memory/propose`, {
+                mcrs: Array.isArray(mcrs) ? mcrs : [mcrs],
+                scope_filters: {},
+            });
+            
+            if (result.ok) {
+                document.getElementById('memoryBatchId').value = result.data.batch_id || '';
+                showOutput('memoryOutput', result.data);
+            } else {
+                showOutput('memoryOutput', { error: result.error }, true);
+            }
+        }
+
+        async function searchMemory() {
+            const runId = document.getElementById('memoryRunId').value.trim();
+            const result = await apiCall('GET', `/runs/${runId}/memory/search?q=&top_k=10`);
+            showOutput('memoryOutput', result.ok ? result.data : { error: result.error }, !result.ok);
+        }
+
+        async function createMilestone() {
+            const runId = document.getElementById('milestoneRunId').value.trim();
+            const batchId = document.getElementById('memoryBatchId').value.trim();
+            const reason = document.getElementById('milestoneReason').value.trim() || 'checkpoint';
+            const nextEntry = document.getElementById('nextEntryPoint').value.trim();
+            
+            const result = await apiCall('POST', `/runs/${runId}/milestone`, {
+                reason,
+                memory_batch_id: batchId || null,
+                next_entry_point: nextEntry,
+            });
+            
+            showOutput('milestoneOutput', result.ok ? result.data : { error: result.error }, !result.ok);
+        }
+
+        async function snapshotResume() {
+            const runId = document.getElementById('resumeRunId').value.trim();
+            const result = await apiCall('POST', `/runs/${runId}/resume/snapshot`, {
+                zip_pack: true,
+                pointers: {},
+            });
+            showOutput('resumeOutput', result.ok ? result.data : { error: result.error }, !result.ok);
+        }
+
+        async function loadResume() {
+            const packPath = document.getElementById('packPath').value.trim();
+            if (!packPath) {
+                showOutput('resumeOutput', { error: 'Pack path required' }, true);
+                return;
+            }
+            
+            const result = await apiCall('POST', '/runs/resume/load', {
+                pack_path: packPath,
+            });
+            
+            if (result.ok && result.data.run_id) {
+                document.getElementById('runId').value = result.data.run_id;
+                showOutput('resumeOutput', result.data);
+            } else {
+                showOutput('resumeOutput', { error: result.error || 'Load failed' }, true);
+            }
+        }
+    </script>
+</body>
+</html>
+

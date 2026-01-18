@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aos.local/schemas/episode.v2.1.schema.json",
+  "title": "EpisodeV2_1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_schema_version",
+    "episode_id",
+    "created_at",
+    "summary",
+    "ws_before",
+    "ws_after",
+    "memory_commits",
+    "next_entry_point"
+  ],
+  "properties": {
+    "_schema_version": {"type": "string", "const": "2.1"},
+    "episode_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"},
+    "summary": {"type": "string"},
+    "ws_before": {"type": "object"},
+    "ws_after": {"type": "object"},
+    "memory_commits": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "next_entry_point": {"type": "string"}
+  }
+}

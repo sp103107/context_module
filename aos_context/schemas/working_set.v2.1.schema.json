@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aos.local/schemas/working_set.v2.1.schema.json",
+  "title": "WorkingSetV2_1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_schema_version",
+    "_update_seq",
+    "task_id",
+    "thread_id",
+    "run_id",
+    "status",
+    "objective",
+    "acceptance_criteria",
+    "current_stage",
+    "next_action",
+    "constraints",
+    "artifact_refs",
+    "blockers",
+    "last_action_summary",
+    "pinned_context",
+    "sliding_context"
+  ],
+  "properties": {
+    "_schema_version": {"type": "string", "const": "2.1"},
+    "_update_seq": {"type": "integer", "minimum": 0},
+    "task_id": {"type": "string", "minLength": 1},
+    "thread_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {
+      "type": "string",
+      "enum": ["BOOT", "IDLE", "BUSY", "WAITING_INPUT", "PAUSED", "DONE", "FAILED"]
+    },
+    "objective": {"type": "string", "minLength": 1},
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "current_stage": {"type": "string", "minLength": 1},
+    "next_action": {"type": "string"},
+    "constraints": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/ArtifactRef"}
+    },
+    "blockers": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "last_action_summary": {"type": "string"},
+    "pinned_context": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {"$ref": "#/$defs/PinnedContextItem"}
+    },
+    "sliding_context": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/SlidingContextItem"}
+    }
+  },
+  "$defs": {
+    "ArtifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 1},
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}
+      }
+    },
+    "PinnedContextItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "content"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "content": {"type": "string", "minLength": 1},
+        "source_ref": {"type": "string"}
+      }
+    },
+    "SlidingContextItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "content", "timestamp", "priority"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "content": {"type": "string", "minLength": 1},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "priority": {"type": "integer", "minimum": 0, "maximum": 9}
+      }
+    }
+  }
+}

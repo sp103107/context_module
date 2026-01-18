@@ -1,0 +1,32 @@
+[project]
+name = "aos-context"
+version = "2.1.0"
+description = "AoS-lite Context Management v2.1 (WS/RL/EP/LTM/Resume Pack) reference implementation"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "AoS", email = "noreply@example.com"}]
+dependencies = [
+  "fastapi>=0.111.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.6.0",
+  "jsonschema>=4.21.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+aos-context = "aos_context.cli:main"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+[build-system]
+requires = ["setuptools>=68.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"aos_context" = ["schemas/*.json"]

@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aos.local/schemas/ledger_event.v2.1.schema.json",
+  "title": "LedgerEventV2_1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_schema_version",
+    "event_id",
+    "parent_event_id",
+    "sequence_id",
+    "event_type",
+    "timestamp",
+    "writer_id",
+    "task_id",
+    "thread_id",
+    "run_id",
+    "payload"
+  ],
+  "properties": {
+    "_schema_version": {"type": "string", "const": "2.1"},
+    "event_id": {"type": "string", "minLength": 1},
+    "parent_event_id": {"type": ["string", "null"]},
+    "sequence_id": {"type": ["integer", "null"], "minimum": 1},
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "RUN_START",
+        "STEP_REQUEST",
+        "MODEL_ACTION",
+        "TOOL_CALL",
+        "TOOL_RESULT",
+        "MODEL_UPDATE",
+        "WS_UPDATE_APPLIED",
+        "WS_UPDATE_REJECTED",
+        "ERROR",
+        "MILESTONE"
+      ]
+    },
+    "timestamp": {"type": "string", "format": "date-time"},
+    "writer_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "thread_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "event_type": {"const": "RUN_START"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["config"],
+              "properties": {
+                "config": {"type": "object"}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "STEP_REQUEST"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ws_seq"],
+              "properties": {
+                "ws_seq": {"type": "integer", "minimum": 0},
+                "model": {"type": "string"},
+                "context_brief": {"type": "string"}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "MODEL_ACTION"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["action"],
+              "properties": {
+                "action": {"type": "object"},
+                "raw": {"type": "object"}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "TOOL_CALL"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tool_name"],
+              "properties": {
+                "tool_name": {"type": "string"},
+                "arguments": {"type": "object"}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "TOOL_RESULT"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tool_name", "ok"],
+              "properties": {
+                "tool_name": {"type": "string"},
+                "ok": {"type": "boolean"},
+                "result": {"type": ["object", "array", "string", "number", "boolean", "null"]}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "MODEL_UPDATE"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["expected_seq"],
+              "properties": {
+                "expected_seq": {"type": "integer", "minimum": 0},
+                "ws_patch": {"type": "object"},
+                "mcrs": {"type": "array"}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "WS_UPDATE_APPLIED"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["new_seq"],
+              "properties": {
+                "new_seq": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "WS_UPDATE_REJECTED"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["error"],
+              "properties": {
+                "error": {"type": "string"}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "ERROR"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["error_type", "message"],
+              "properties": {
+                "error_type": {"type": "string"},
+                "message": {"type": "string"},
+                "details": {"type": "object"}
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "event_type": {"const": "MILESTONE"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reason"],
+              "properties": {
+                "reason": {"type": "string"},
+                "episode_id": {"type": "string"}
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

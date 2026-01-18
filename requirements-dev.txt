@@ -1,0 +1,12 @@
+# AoS Context v2.1 - Development Dependencies
+# Install with: pip install -r requirements-dev.txt
+# Or: pip install -e ".[dev]"
+
+# Production dependencies
+-r requirements.txt
+
+# Development dependencies
+pytest>=8.0.0
+pytest-cov>=4.1.0
+requests>=2.31.0
+
