@@ -10,6 +10,7 @@ dependencies = [
   "uvicorn[standard]>=0.30.0",
   "pydantic>=2.6.0",
   "jsonschema>=4.21.0",
+  "qdrant-client>=1.7.0",
 ]
 
 [project.optional-dependencies]
