@@ -1,261 +1,428 @@
-# AoS Context Management v2.1 — Schemas + Python Reference Implementation
+# AoS Context Module
 
-This repo is a **ready-to-run** implementation of the **Context Management v2.1** spec:
+A crash-safe, transactional state management system for AI agents.
 
-- **WS (Working Set)**: hot mutable state with optimistic locking + deterministic eviction
-- **RL (Run Ledger)**: append-only JSONL audit log
-- **EP (Episodes)**: immutable milestone checkpoints
-- **LTM (Long-Term Memory)**: gated propose/commit workflow (MVP in-memory store; swap with Mem0)
-- **Resume Pack**: portable snapshot with manifest hashes
+The AoS Context Module provides a production-ready framework for managing agent state, memory, and context with features like optimistic locking, deterministic eviction, and portable snapshots.
 
-All persisted artifacts are validated against **Draft 2020-12 JSON Schema** with `additionalProperties:false`.
+## Features
 
-## Quickstart (CLI)
+- **Working Set (WS)**: Hot mutable state with optimistic locking and deterministic eviction
+- **Run Ledger (RL)**: Append-only JSONL audit log for complete history
+- **Episodes (EP)**: Immutable milestone checkpoints
+- **Long-Term Memory (LTM)**: Transactional propose/commit workflow with Qdrant support
+- **Resume Packs**: Portable snapshots for state migration between environments
+- **FastAPI Server**: RESTful API for remote access
+- **Schema Validation**: All artifacts validated against JSON Schema Draft 2020-12
+
+## Installation
+
+### From GitHub
 
 ```bash
-cd aos_context_v2_1
-python -m aos_context.cli demo --root ./runs
+pip install git+https://github.com/sp103107/context_module.git
 ```
 
-## Quickstart (API)
+### Local Editable Installation
 
 ```bash
-cd aos_context_v2_1
-uvicorn aos_context.api.main:app --reload --port 8000
+git clone https://github.com/sp103107/context_module.git
+cd context_module
+pip install -e .
 ```
 
-### Boot a run
+### Dependencies
 
-```bash
-curl -sS -X POST http://127.0.0.1:8000/runs/boot \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "objective": "Generate schemas and implement WS/RL/EP for my agent factory.",
-    "acceptance_criteria": ["Schemas validate", "WS patch applies", "Ledger appends"],
-    "constraints": ["No unknown WS fields", "Commit memory only at milestones"]
-  }' | jq
+The package requires:
+- Python >= 3.10
+- fastapi >= 0.111.0
+- uvicorn[standard] >= 0.30.0
+- pydantic >= 2.6.0
+- jsonschema >= 4.21.0
+- qdrant-client >= 1.7.0 (optional, for vector memory)
+
+## Quick Start
+
+### Python Library Usage
+
+#### 1. Initialize a Working Set Manager
+
+```python
+from pathlib import Path
+from aos_context.ws_manager import WorkingSetManager
+
+# Create a working set manager
+ws_path = Path("./runs/my_task/state/working_set.v2.1.json")
+wsm = WorkingSetManager(ws_path)
 ```
 
-### Apply a WS patch
+#### 2. Boot a Task
 
-1) GET the current WS to read `_update_seq`.
-2) POST a patch with `expected_seq` = current `_update_seq`.
+```python
+# Create initial working set
+ws = wsm.create_initial(
+    task_id="task_123",
+    thread_id="thread_456",
+    run_id="run_789",
+    objective="Build a web scraper",
+    acceptance_criteria=["Scrapes target site", "Saves to JSON"],
+    constraints=["No rate limiting violations"]
+)
 
-```bash
-curl -sS http://127.0.0.1:8000/runs/<run_id>/ws | jq
+print(f"Run ID: {ws['run_id']}")
+print(f"Status: {ws['status']}")
+print(f"Update Sequence: {ws['_update_seq']}")
+```
 
-curl -sS -X POST http://127.0.0.1:8000/runs/<run_id>/step/update \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "patch": {
-      "_schema_version": "2.1",
-      "expected_seq": 0,
-      "set": {
+#### 3. Update State with Optimistic Locking
+
+```python
+# Get current state
+current_ws = wsm.load()
+expected_seq = current_ws["_update_seq"]
+
+# Apply a patch
+patch = {
+    "_schema_version": "2.1",
+    "expected_seq": expected_seq,
+    "set": {
         "status": "BUSY",
-        "current_stage": "PLAN",
-        "next_action": "Write strict schemas for all artifacts.",
-        "sliding_context": [
-          {"id": "ctx1", "content": "Use pinned+sliding contexts.", "timestamp": "2026-01-18T00:00:00Z", "priority": 2}
-        ]
-      }
+        "next_action": "Start scraping",
+        "current_stage": "EXECUTE"
     }
-  }' | jq
+}
+
+result = wsm.apply_patch(patch)
+if result.ok:
+    print(f"Updated successfully. New seq: {result.new_ws['_update_seq']}")
+else:
+    print(f"Update failed: {result.error}")
+    # Handle conflict - reload and retry
 ```
 
-### Create a milestone (episode)
+#### 4. Create Resume Pack
 
-```bash
-curl -sS -X POST http://127.0.0.1:8000/runs/<run_id>/milestone \
-  -H 'Content-Type: application/json' \
-  -d '{"reason": "checkpoint", "next_entry_point": "Continue from PLAN stage."}' | jq
+```python
+from pathlib import Path
+
+# Create a portable snapshot
+snapshots_dir = Path("./snapshots")
+pack_path = wsm.create_resume_pack(snapshots_dir)
+print(f"Snapshot saved to: {pack_path}")
+
+# Restore from pack
+restored_wsm = WorkingSetManager.restore_from_pack(
+    pack_path,
+    Path("./restored_workspace")
+)
+restored_ws = restored_wsm.load()
+print(f"Restored objective: {restored_ws['objective']}")
 ```
 
-### Memory Operations
+### API Server Usage
 
-#### Propose memory (stage MCRs)
+#### Start the Server
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8000/runs/<run_id>/memory/propose \
-  -H 'Content-Type: application/json' \
+# Using uvicorn directly
+uvicorn server:app --reload --port 8000
+
+# Or using Python
+python server.py
+```
+
+The server will be available at `http://127.0.0.1:8000`
+
+#### API Endpoints
+
+##### 1. Boot a Run
+
+Create a new agent run.
+
+```bash
+curl -X POST http://127.0.0.1:8000/runs \
+  -H "Content-Type: application/json" \
   -d '{
-    "mcrs": [
-      {
-        "_schema_version": "2.1",
-        "op": "add",
-        "type": "fact",
-        "scope": "global",
-        "content": "User prefers Python over JavaScript",
-        "confidence": 0.9,
-        "rationale": "Observed in multiple conversations",
-        "source_refs": []
-      }
-    ],
-    "scope_filters": {}
-  }' | jq
+    "objective": "Research the history of AI",
+    "acceptance_criteria": ["Findings documented", "Sources cited"],
+    "constraints": ["Use reliable sources"]
+  }'
 ```
 
-#### Commit memory (milestone-only gate)
-
-```bash
-# Only works during milestone phase (or with allow_outside_milestone=true for tests)
-curl -sS -X POST http://127.0.0.1:8000/runs/<run_id>/memory/commit \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "batch_id": "batch_...",
-    "allow_outside_milestone": false
-  }' | jq
+**Response:**
+```json
+{
+  "run_id": "run_abc123...",
+  "status": "BOOT"
+}
 ```
 
-#### Search memory
+##### 2. Get Run State
+
+Retrieve the current working set state.
 
 ```bash
-curl -sS "http://127.0.0.1:8000/runs/<run_id>/memory/search?q=python&top_k=10&scope=global&status=active" | jq
+curl http://127.0.0.1:8000/runs/{run_id}
 ```
 
-### Resume Pack Operations
-
-#### Snapshot resume pack
-
-```bash
-curl -sS -X POST http://127.0.0.1:8000/runs/<run_id>/resume/snapshot \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "zip_pack": true,
-    "pointers": {"ledger_last_seq": 42}
-  }' | jq
+**Response:**
+```json
+{
+  "_schema_version": "2.1",
+  "_update_seq": 0,
+  "run_id": "run_abc123...",
+  "status": "BOOT",
+  "objective": "Research the history of AI",
+  "current_stage": "BOOT",
+  "next_action": "",
+  ...
+}
 ```
 
-#### Load resume pack
+##### 3. Update State (with Optimistic Locking)
+
+Update the working set. Returns `409 Conflict` if state has changed.
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8000/runs/resume/load \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "pack_path": "./runs/<run_id>/resume/pack_<id>.zip",
-    "new_run_id": null
-  }' | jq
-```
+# First, get current state to read _update_seq
+curl http://127.0.0.1:8000/runs/{run_id} > current_state.json
 
-## Web UI
-
-Access the control panel at `http://127.0.0.1:8000/` (redirects to `/static/index.html`).
-
-The UI provides:
-- Boot runs
-- View and update working sets
-- Propose and search memory
-- Create milestones
-- Snapshot and load resume packs
-
-## End-to-End Demo Flow
-
-```bash
-# 1. Boot a run
-RUN_ID=$(curl -sS -X POST http://127.0.0.1:8000/runs/boot \
-  -H 'Content-Type: application/json' \
-  -d '{"objective": "Test end-to-end flow"}' | jq -r '.run_id')
-
-# 2. Patch WS
-curl -sS -X POST http://127.0.0.1:8000/runs/$RUN_ID/step/update \
-  -H 'Content-Type: application/json' \
+# Then update with expected_seq
+curl -X PATCH http://127.0.0.1:8000/runs/{run_id} \
+  -H "Content-Type: application/json" \
   -d '{
     "patch": {
-      "_schema_version": "2.1",
-      "expected_seq": 0,
-      "set": {"status": "BUSY", "next_action": "Test memory"}
-    }
-  }' | jq
+      "status": "BUSY",
+      "next_action": "Start research",
+      "current_stage": "RESEARCH"
+    },
+    "expected_seq": 0
+  }'
+```
 
-# 3. Propose memory
-BATCH_ID=$(curl -sS -X POST http://127.0.0.1:8000/runs/$RUN_ID/memory/propose \
-  -H 'Content-Type: application/json' \
+**Response (Success):**
+```json
+{
+  "ok": true,
+  "ws": {
+    "_update_seq": 1,
+    "status": "BUSY",
+    ...
+  }
+}
+```
+
+**Response (Conflict - 409):**
+```json
+{
+  "ok": false,
+  "error": "Conflict: State has changed. Reload and retry."
+}
+```
+
+##### 4. Propose Memory
+
+Stage memory change requests for later commit.
+
+```bash
+curl -X POST http://127.0.0.1:8000/runs/{run_id}/memory/propose \
+  -H "Content-Type: application/json" \
   -d '{
     "mcrs": [{
       "_schema_version": "2.1",
       "op": "add",
       "type": "fact",
       "scope": "global",
-      "content": "Test memory item",
-      "confidence": 0.8,
-      "rationale": "Testing",
+      "content": "AI was first proposed in 1956",
+      "confidence": 0.9,
+      "rationale": "Historical fact",
       "source_refs": []
-    }]
-  }' | jq -r '.batch_id')
-
-# 4. Create milestone (commits memory)
-curl -sS -X POST http://127.0.0.1:8000/runs/$RUN_ID/milestone \
-  -H 'Content-Type: application/json' \
-  -d "{\"reason\": \"checkpoint\", \"memory_batch_id\": \"$BATCH_ID\"}" | jq
-
-# 5. Snapshot resume pack
-curl -sS -X POST http://127.0.0.1:8000/runs/$RUN_ID/resume/snapshot \
-  -H 'Content-Type: application/json' \
-  -d '{"zip_pack": true}' | jq
+    }],
+    "scope_filters": {}
+  }'
 ```
 
-## Files and Layout
-
-- `aos_context/schemas/` — strict Draft 2020-12 schemas
-- `aos_context/ws_manager.py` — optimistic lock + deterministic eviction
-- `aos_context/ledger.py` — append-only JSONL ledger
-- `aos_context/context_brief.py` — stable markdown injection template
-- `aos_context/episode.py` — milestone checkpoint generation
-- `aos_context/resume_pack.py` — portable snapshot + manifest
-- `aos_context/memory.py` — MVP memory store (replace with Mem0)
-
-## Standalone Module Use
-
-This module can be imported and used programmatically:
-
-```python
-from aos_context.ws_manager import WorkingSetManager
-from aos_context.ledger import FileLedger
-from aos_context.memory import InMemoryMemoryStore
-from aos_context.config import DEFAULT_CONFIG
-from pathlib import Path
-
-# Initialize components
-ws_path = Path("./runs/my_run/state/working_set.v2.1.json")
-wsm = WorkingSetManager(ws_path, config=DEFAULT_CONFIG)
-
-# Create initial WS
-ws = wsm.create_initial(
-    task_id="task_123",
-    thread_id="thread_456",
-    run_id="run_789",
-    objective="My objective",
-    acceptance_criteria=["Criterion 1"],
-    constraints=["Constraint 1"],
-)
-
-# Apply patch with optimistic locking
-result = wsm.apply_patch({
-    "_schema_version": "2.1",
-    "expected_seq": 0,
-    "set": {"status": "BUSY", "next_action": "Do something"}
-})
-
-# Use ledger
-ledger = FileLedger(Path("./runs/my_run/ledger/run.v2.1.jsonl"))
-ledger.append({
-    "_schema_version": "2.1",
-    "event_id": "...",
-    "event_type": "WS_UPDATE_APPLIED",
-    # ... other fields
-})
-
-# Use memory store
-memory = InMemoryMemoryStore()
-propose_result = memory.propose([{...}], scope_filters={})
-commit_result = memory.commit(propose_result.batch_id)
+**Response:**
+```json
+{
+  "ok": true,
+  "batch_id": "batch_xyz789..."
+}
 ```
 
-## Replace LTM with Mem0
+##### 5. Commit Memory
 
-Swap `InMemoryMemoryStore` with a Mem0 adapter that implements:
+Commit staged memories to active status.
 
-- `search(query, filters, top_k)`
-- `propose(mcrs, scope_filters)`
-- `commit(batch_id)`
+```bash
+curl -X POST http://127.0.0.1:8000/runs/{run_id}/memory/commit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "batch_id": "batch_xyz789..."
+  }'
+```
 
-Keep the **Double-Key Commit** rule: propose in the loop; commit only at milestone.
+**Response:**
+```json
+{
+  "ok": true,
+  "committed_ids": ["mem_abc123..."]
+}
+```
+
+##### 6. Create Snapshot
+
+Create a portable resume pack.
+
+```bash
+curl -X POST http://127.0.0.1:8000/runs/{run_id}/snapshot
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "pack_path": "./server_workspace/snapshots/task_123_resume_20260118_120000.zip"
+}
+```
+
+##### 7. Health Check
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "service": "aos-context-server"
+}
+```
+
+## Configuration
+
+### Environment Variables
+
+#### Qdrant Memory Backend
+
+To use Qdrant for vector-based memory storage:
+
+```bash
+export QDRANT_URL=http://localhost:6333
+export QDRANT_COLLECTION=agent_memories
+python server.py
+```
+
+The server will automatically:
+- Connect to Qdrant at the specified URL
+- Create the collection if it doesn't exist
+- Use QdrantMemoryStore instead of InMemoryMemoryStore
+
+**Note:** For production, replace the dummy embedder in `server.py` with a real embedding function (OpenAI, HuggingFace, etc.).
+
+#### Workspace Directory
+
+```bash
+export AOS_RUNS_ROOT=/path/to/runs
+```
+
+## Architecture
+
+### Working Set (WS)
+
+The Working Set is the hot, mutable state of an agent run. It includes:
+- Task metadata (objective, acceptance criteria, constraints)
+- Current status and stage
+- Pinned context (always included)
+- Sliding context (evicted based on token budget)
+
+**Key Features:**
+- Optimistic locking via `_update_seq`
+- Deterministic eviction (priority + timestamp)
+- Atomic writes (crash-safe)
+
+### Memory System
+
+The memory system supports a two-phase commit workflow:
+
+1. **Propose**: Stage memory change requests (MCRs)
+2. **Commit**: Activate staged memories
+
+**Backends:**
+- `InMemoryMemoryStore`: Simple in-process storage (default)
+- `QdrantMemoryStore`: Vector database for semantic search (production)
+
+### Resume Packs
+
+Resume packs are portable ZIP files containing:
+- `working_set.json`: Current state
+- `run.jsonl`: Ledger history (if available)
+
+Use cases:
+- Migrate agent state between environments
+- Create checkpoints for rollback
+- Share agent state between systems
+
+## Examples
+
+### Complete Agent Loop
+
+See `run_agent_loop.py` for a complete example demonstrating:
+- Booting a run
+- Fetching and updating state
+- Handling 409 conflicts
+- Proposing and committing memories
+- Creating snapshots
+
+```bash
+# Terminal 1: Start server
+python server.py
+
+# Terminal 2: Run agent loop
+python run_agent_loop.py
+```
+
+### Integration Example
+
+See `examples/agent_integration_example.py` for integration patterns:
+- HTTP client wrapper
+- Agent loop with context management
+- Error handling and retry logic
+
+## Development
+
+### Running Tests
+
+```bash
+pytest tests/ -v
+```
+
+### Code Coverage
+
+```bash
+pytest tests/ --cov=aos_context --cov-report=html
+```
+
+### Linting
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Contributions welcome! Please open an issue or pull request on GitHub.
+
+## Links
+
+- **GitHub**: https://github.com/sp103107/context_module
+- **API Documentation**: http://127.0.0.1:8000/docs (when server is running)
+- **Interactive API**: http://127.0.0.1:8000/redoc
