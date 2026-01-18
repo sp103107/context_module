@@ -58,3 +58,86 @@ def test_eviction_keeps_high_priority(tmp_path: Path) -> None:
     ws2 = wsm.load()
     ids = {it["id"] for it in ws2["sliding_context"]}
     assert "high" in ids
+
+
+def test_create_resume_pack(tmp_path: Path) -> None:
+    """Test create_resume_pack creates a valid zip file."""
+    ws_path = tmp_path / "state" / "working_set.v2.1.json"
+    wsm = WorkingSetManager(ws_path)
+    ws = wsm.create_initial(
+        task_id="task_123",
+        thread_id="thread_456",
+        run_id="run_789",
+        objective="Test resume pack",
+        acceptance_criteria=[],
+        constraints=[],
+    )
+
+    # Create output directory
+    output_dir = tmp_path / "snapshots"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create resume pack
+    pack_path = wsm.create_resume_pack(output_dir)
+
+    # Verify zip file exists
+    assert pack_path.exists()
+    assert pack_path.suffix == ".zip"
+    assert "task_task_123" in pack_path.name
+
+    # Verify zip contents
+    import zipfile
+    with zipfile.ZipFile(pack_path, "r") as zf:
+        namelist = zf.namelist()
+        assert "working_set.json" in namelist
+
+
+def test_restore_from_pack(tmp_path: Path) -> None:
+    """Test restore_from_pack restores working set from zip."""
+    # Create initial WS
+    ws_path = tmp_path / "original" / "state" / "working_set.v2.1.json"
+    wsm = WorkingSetManager(ws_path)
+    ws = wsm.create_initial(
+        task_id="task_restore",
+        thread_id="thread_restore",
+        run_id="run_restore",
+        objective="Test restore",
+        acceptance_criteria=["Criterion 1"],
+        constraints=["Constraint 1"],
+    )
+
+    # Create resume pack
+    output_dir = tmp_path / "snapshots"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pack_path = wsm.create_resume_pack(output_dir)
+
+    # Restore from pack
+    restore_dir = tmp_path / "restored"
+    restored_wsm = WorkingSetManager.restore_from_pack(pack_path, restore_dir)
+
+    # Verify restored WS
+    restored_ws = restored_wsm.load()
+    assert restored_ws["task_id"] == "task_restore"
+    assert restored_ws["objective"] == "Test restore"
+    assert restored_ws["acceptance_criteria"] == ["Criterion 1"]
+    assert restored_ws["constraints"] == ["Constraint 1"]
+
+
+def test_restore_from_pack_invalid_schema(tmp_path: Path) -> None:
+    """Test restore_from_pack rejects invalid schema."""
+    import zipfile
+    import json
+
+    # Create a zip with invalid working set
+    invalid_zip = tmp_path / "invalid.zip"
+    with zipfile.ZipFile(invalid_zip, "w") as zf:
+        invalid_ws = {"invalid": "data", "_schema_version": "2.1"}
+        zf.writestr("working_set.json", json.dumps(invalid_ws))
+
+    # Attempt restore should fail
+    restore_dir = tmp_path / "restored"
+    try:
+        WorkingSetManager.restore_from_pack(invalid_zip, restore_dir)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "Invalid working set schema" in str(e)

@@ -3,12 +3,14 @@ from __future__ import annotations
 import copy
 import json
 import os
+import zipfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from aos_context.config import ContextConfig, DEFAULT_CONFIG
-from aos_context.token_estimator import estimate_tokens, estimate_tokens_any
+from aos_context.token_estimator import estimate_tokens
 from aos_context.validation import assert_valid, validate_instance
 
 
@@ -235,3 +237,114 @@ class WorkingSetManager:
 
         # Validate after enforcement (ensures strictness)
         assert_valid("working_set.v2.1.schema.json", ws)
+
+    def create_resume_pack(self, output_dir: Path) -> Path:
+        """Create a zipped snapshot of the current task state.
+
+        Creates a timestamped zip file containing:
+        - working_set.json (current state)
+        - run.jsonl (ledger audit trail, if available)
+
+        Args:
+            output_dir: Directory where the zip file will be created
+
+        Returns:
+            Path to the generated zip file
+
+        Raises:
+            FileNotFoundError: If working set doesn't exist
+            ValueError: If output_dir cannot be created
+        """
+        if not self.exists():
+            raise FileNotFoundError(f"Working set not found: {self.ws_path}")
+
+        # Ensure output directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Load current WS to get task ID for naming
+        ws = self.load()
+        task_id = ws.get("task_id", "unknown")
+
+        # Generate timestamp for unique filename
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        zip_filename = f"task_{task_id}_resume_{timestamp}.zip"
+        zip_path = output_dir / zip_filename
+
+        # Find ledger path (typically in same run directory structure)
+        # ws_path is: runs/{run_id}/state/working_set.v2.1.json
+        # ledger is: runs/{run_id}/ledger/run.v2.1.jsonl
+        run_dir = self.ws_path.parent.parent  # Up from state/ to runs/{run_id}/
+        ledger_path = run_dir / "ledger" / "run.v2.1.jsonl"
+
+        # Create zip archive
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            # Add working set (always required)
+            zf.write(
+                self.ws_path,
+                arcname="working_set.json"
+            )
+
+            # Add ledger if it exists (proceed if missing)
+            if ledger_path.exists():
+                zf.write(ledger_path, arcname="run.jsonl")
+            # Note: Proceed without ledger if missing (non-critical)
+
+        return zip_path
+
+    @classmethod
+    def restore_from_pack(
+        cls, zip_path: Path, target_dir: Path
+    ) -> "WorkingSetManager":
+        """Restore an agent from a resume pack zip file.
+
+        Class method to boot an agent from a zip file snapshot.
+        Validates the working set schema before restoring.
+
+        Args:
+            zip_path: Path to the resume pack zip file
+            target_dir: Directory where files will be extracted and restored
+
+        Returns:
+            New WorkingSetManager instance pointing to restored data
+
+        Raises:
+            FileNotFoundError: If zip_path doesn't exist
+            ValueError: If working_set.json is missing or invalid
+            zipfile.BadZipFile: If zip file is corrupted
+        """
+        if not zip_path.exists():
+            raise FileNotFoundError(f"Resume pack not found: {zip_path}")
+
+        # Ensure target directory exists
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extract zip contents
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            # Validate zip structure
+            namelist = zf.namelist()
+            if "working_set.json" not in namelist:
+                raise ValueError(
+                    "Resume pack missing required file: working_set.json"
+                )
+
+            # Extract all files
+            zf.extractall(target_dir)
+
+        # Load and validate working set
+        ws_path = target_dir / "working_set.json"
+        if not ws_path.exists():
+            raise ValueError(
+                f"working_set.json not found after extraction in {target_dir}"
+            )
+
+        # Validate schema before creating manager
+        try:
+            ws_data = json.loads(ws_path.read_text(encoding="utf-8"))
+            assert_valid("working_set.v2.1.schema.json", ws_data)
+        except Exception as e:
+            msg = f"Invalid working set schema in resume pack: {e}"
+            raise ValueError(msg) from e
+
+        # Create WorkingSetManager instance pointing to restored data
+        # Note: We use the extracted path directly
+        return cls(ws_path)
