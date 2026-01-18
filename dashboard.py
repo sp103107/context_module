@@ -30,6 +30,31 @@ def check_server_health() -> bool:
         return False
 
 
+def get_available_runs() -> list[str]:
+    """Get list of available run IDs from server workspace.
+
+    Returns:
+        List of run IDs
+    """
+    try:
+        from pathlib import Path
+        ws_dir = Path("./server_workspace")
+        if not ws_dir.exists():
+            return []
+        
+        runs = []
+        for item in ws_dir.iterdir():
+            if item.is_dir() and item.name.startswith("run_"):
+                # Check if it has a working set file
+                ws_file = item / "state" / "working_set.v2.1.json"
+                if ws_file.exists():
+                    runs.append(item.name)
+        
+        return sorted(runs, reverse=True)  # Most recent first
+    except Exception:
+        return []
+
+
 def get_run_state(run_id: str) -> Optional[Dict[str, Any]]:
     """Fetch working set state for a run.
 
@@ -156,12 +181,44 @@ with st.sidebar:
 
     # Run Selector
     st.subheader("Run Configuration")
-    run_id = st.text_input(
-        "Run ID",
-        value=st.session_state.get("run_id", "run_1"),
-        key="run_id_input",
-    )
-    st.session_state["run_id"] = run_id
+    
+    # Get available runs
+    available_runs = get_available_runs()
+    
+    if available_runs:
+        # Use dropdown if runs are available
+        current_run = st.session_state.get("run_id", available_runs[0])
+        if current_run not in available_runs:
+            current_run = available_runs[0]
+        
+        selected_run = st.selectbox(
+            "Select Run",
+            options=available_runs,
+            index=available_runs.index(current_run) if current_run in available_runs else 0,
+            key="run_id_select",
+        )
+        st.session_state["run_id"] = selected_run
+        run_id = selected_run
+        
+        # Also allow manual entry
+        st.caption("Or enter custom Run ID:")
+        custom_run_id = st.text_input(
+            "Custom Run ID",
+            value="",
+            key="run_id_custom",
+        )
+        if custom_run_id:
+            st.session_state["run_id"] = custom_run_id
+            run_id = custom_run_id
+    else:
+        # Fallback to text input if no runs found
+        run_id = st.text_input(
+            "Run ID",
+            value=st.session_state.get("run_id", "run_1"),
+            key="run_id_input",
+        )
+        st.session_state["run_id"] = run_id
+        st.info("💡 No runs found. Create a run via API or agent loop first.")
 
     # Auto-Refresh Toggle
     auto_refresh = st.checkbox(
