@@ -51,6 +51,11 @@ htmlcov/
 runs/
 *.tmp
 *.temp
+sanity_workspace/
+sanity_snapshots/
+sanity_restored/
+server_workspace/
+venv_test/
 
 # Environment variables
 .env
